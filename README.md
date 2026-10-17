@@ -151,7 +151,7 @@ Terminal agent instead of the web page: `python agent_gemini.py`.
 
 ## Live demo / deployment
 
-**Live demo:** [FILL IN: your Render URL]  (free tier: the first load after idle can take about a minute)
+**Live demo:** [https://pedigreegraph.onrender.com/]  (free tier: the first load after idle can take about a minute)
 
 The live version runs the Flask app on Render with the graph hosted on FalkorDB Cloud. Clicking a person on the tree gives an
 instant report from the graph queries and the exact genetics (no AI call); the chat uses Gemini and is rate limited.
