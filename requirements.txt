@@ -1,0 +1,4 @@
+falkordb
+flask
+gunicorn
+google-genai
