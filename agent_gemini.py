@@ -7,14 +7,14 @@ Setup (PowerShell):
     python agent_gemini.py
 
 If you get a "model not found" error, set a current model name from AI Studio:
-    $env:GEMINI_MODEL = "gemini-3.8-flash"
+    $env:GEMINI_MODEL = "gemini-3.5-flash-lite"
 """
 import json
 import os
 
 import agent_tools as at
 
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 SYSTEM = """You are PedigreeGraph, a family-history risk assistant. All families are SYNTHETIC demo data stored in a FalkorDB graph.
 
