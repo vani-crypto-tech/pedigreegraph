@@ -151,7 +151,7 @@ Terminal agent instead of the web page: `python agent_gemini.py`.
 
 ## Live demo / deployment
 
-**Live demo:** [https://pedigreegraph.onrender.com/]  (free tier: the first load after idle can take about a minute)
+**Live demo:** https://pedigreegraph.onrender.com/  (free tier: the first load after idle can take about a minute)
 
 The live version runs the Flask app on Render with the graph hosted on FalkorDB Cloud. Clicking a person on the tree gives an
 instant report from the graph queries and the exact genetics (no AI call); the chat uses Gemini and is rate limited.
@@ -169,7 +169,7 @@ and load the data once with `python generate_families.py` pointed at your Falkor
 
 ## AI assistance disclosure
 
-This project was built with AI assistance. Claude (Anthropic) helped design the approach and helped in code in this
+This project was built with AI assistance. Claude (Anthropic) wrote much of the code in this
 repository, and Gemini is the LLM inside the agent. My own contributions: I came up with the idea of a family health tracker and chose the domain, the conditions to model and the demo scenarios. I set up Docker and FalkorDB locally, then created and configured the FalkorDB Cloud instance and fixed the connection problems along the way (host and port settings). I ran every script, checked that the graph queries passed all 323 checks with 0 mismatches against both local and Cloud databases, and tested the app and the agent’s answers myself. I also deployed the live version and recorded the demo video.
 
 ## Responsible use
