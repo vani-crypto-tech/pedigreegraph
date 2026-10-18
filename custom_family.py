@@ -8,7 +8,7 @@ Privacy by design:
   - the family is NOT stored: for each report a temporary graph with a random
     name is created in FalkorDB, queried, and deleted again
   - nothing from the request is logged
-  - at most MAX_PEOPLE people, because the exact-genetics engine grows fast
+  - between MIN_PEOPLE and MAX_PEOPLE people (20 to 50); the exact-genetics engine uses variable elimination, so 50 people is fast
 """
 import json
 import re
@@ -17,8 +17,8 @@ import uuid
 import agent_tools as at
 import pedigree_tools as pt
 
-MAX_PEOPLE = 20
-MIN_PEOPLE = 3
+MAX_PEOPLE = 50
+MIN_PEOPLE = 20
 NAME_RE = re.compile(r"^[A-Za-z0-9 ]{1,12}$")
 CONDITIONS = [
     "Beta-thalassemia",
@@ -180,7 +180,10 @@ def analyze(payload, person_name):
                 {"rows": model["partners"]},
             )
         ped = pt.load_family(g, "CUSTOM")
-        report = at.health_report(person_id, g=g, ped=ped)
+        try:
+            report = at.health_report(person_id, g=g, ped=ped)
+        except pt.PedigreeTooComplex as e:
+            raise InputError(str(e) + " Try removing some of the loops.")
     finally:
         try:
             g.delete()  # nothing is kept
@@ -214,8 +217,17 @@ EXAMPLE = {
         {"name": "Asha", "sex": "F"}, {"name": "Ravi", "sex": "M"},
         {"name": "Meera", "sex": "F", "father": "Ravi", "mother": "Asha"},
         {"name": "Kiran", "sex": "M", "father": "Ravi", "mother": "Asha"},
-        {"name": "Dev", "sex": "M", "partner": "Meera"},
-        {"name": "Sita", "sex": "F", "partner": "Kiran"},
+        {"name": "Hari", "sex": "M"}, {"name": "Lata", "sex": "F"},
+        {"name": "Dev", "sex": "M", "father": "Hari", "mother": "Lata", "partner": "Meera"},
+        {"name": "Nisha", "sex": "F", "father": "Hari", "mother": "Lata"},
+        {"name": "Raj", "sex": "M", "partner": "Nisha"},
+        {"name": "Zoya", "sex": "F", "father": "Raj", "mother": "Nisha"},
+        {"name": "Om", "sex": "M"}, {"name": "Usha", "sex": "F"},
+        {"name": "Sita", "sex": "F", "father": "Om", "mother": "Usha", "partner": "Kiran"},
+        {"name": "Vik", "sex": "M", "father": "Om", "mother": "Usha"},
+        {"name": "Pia", "sex": "F", "partner": "Vik"},
+        {"name": "Ira", "sex": "F", "father": "Vik", "mother": "Pia"},
+        {"name": "Jai", "sex": "M", "father": "Vik", "mother": "Pia"},
         {"name": "Anil", "sex": "M", "father": "Dev", "mother": "Meera"},
         {"name": "Tara", "sex": "F", "father": "Kiran", "mother": "Sita", "partner": "Anil"},
         {"name": "Neel", "sex": "M", "father": "Anil", "mother": "Tara", "affected": True},
@@ -268,7 +280,7 @@ PAGE = r"""<!doctype html>
       <tbody id="rows"></tbody>
     </table>
     <div class="row"><button onclick="addRow()">+ Add person</button><span class="hint" id="count"></span></div>
-    <div class="hint">Give both parents or neither. Partners who share a child are linked automatically. Up to __MAX__ people. Tick "Affected" for anyone in the family known to have the condition, even a distant relative. If nobody is ticked, you only see population averages. You do not need to add a child: add yourself and your partner as a couple.</div>
+    <div class="hint">Give both parents or neither. Partners who share a child are linked automatically. Between __MIN__ and __MAX__ people. Tick "Affected" for anyone in the family known to have the condition, even a distant relative. If nobody is ticked, you only see population averages. You do not need to add a child: add yourself and your partner as a couple.</div>
     <div id="msg"></div>
   </section>
   <section id="right">
@@ -278,6 +290,7 @@ PAGE = r"""<!doctype html>
 </main>
 <script>
 const MAXP = __MAX__;
+const MINP = __MIN__;
 const CONDS = __CONDS__;
 const EXAMPLE = __EXAMPLE__;
 let rows = [], nextId = 1, network = null, nodesDS = null, edgesDS = null;
@@ -351,7 +364,7 @@ function renderRows() {
     tr.querySelector('button.x').onclick = () => removeRow(r.rid);
     tb.appendChild(tr);
   });
-  document.getElementById('count').textContent = rows.length + ' / ' + MAXP + ' people';
+  document.getElementById('count').textContent = rows.length + ' people (enter ' + MINP + ' to ' + MAXP + ')';
 }
 function renderRowsKeepFocus() {
   {  // refresh the other dropdowns without losing the cursor
@@ -467,4 +480,4 @@ function highlight(h) {
 loadExample();
 </script>
 </body></html>
-""".replace("__MAX__", str(MAX_PEOPLE)).replace("__CONDS__", json.dumps(CONDITIONS)).replace("__EXAMPLE__", json.dumps(EXAMPLE))
+""".replace("__MAX__", str(MAX_PEOPLE)).replace("__MIN__", str(MIN_PEOPLE)).replace("__CONDS__", json.dumps(CONDITIONS)).replace("__EXAMPLE__", json.dumps(EXAMPLE))
