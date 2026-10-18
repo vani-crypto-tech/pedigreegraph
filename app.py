@@ -443,6 +443,36 @@ def api_custom_report():
     return jsonify({"text": format_report(rep), "highlight": collect_highlight([call])})
 
 
+@app.post("/api/custom/ask")
+def api_custom_ask():
+    body = request.get_json(force=True, silent=True) or {}
+    question = str(body.get("question", "")).strip()[:300]
+    person = str(body.get("person", ""))[:40]
+    if not question:
+        return jsonify({"error": "Empty question"}), 400
+    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+        return jsonify({"error": "Chat is unavailable: this server has no AI key. Click a person on the tree for their report."}), 503
+    limited = rate_limited() or custom_limited()  # chat counts against both the AI limit and the own-family limit
+    if limited:
+        return jsonify({"error": limited}), 429
+    try:
+        rep = cf.analyze(body.get("family"), person)
+        if "error" in rep:
+            return jsonify({"error": rep["error"]}), 404
+        answer = cf.ask_ai(body.get("family"), format_report(rep), question)
+    except cf.InputError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:  # never echo the visitor's data back or into logs
+        msg = str(e)
+        app.logger.warning("custom ask failed: %s", type(e).__name__)
+        if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+            return jsonify({"error": "The AI chat has reached its free daily quota for this demo. "
+                                     "You can still click any person on the tree for an instant report."}), 429
+        return jsonify({"error": "Could not answer right now. Please try again."}), 500
+    call = {"tool": "health_report", "args": {"person": rep.get("person", person)}, "output": rep}
+    return jsonify({"answer": answer, "highlight": collect_highlight([call])})
+
+
 @app.get("/")
 def index():
     return PAGE
