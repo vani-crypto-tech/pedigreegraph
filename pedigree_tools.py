@@ -12,7 +12,9 @@ Assumptions (always state these in the demo):
 All data is synthetic.
 """
 import json
+import math
 from collections import deque
+from itertools import product
 
 ALLELE_FREQ = {"AR": 0.01, "AD": 0.001}
 MODE_NAMES = {"AR": "autosomal recessive", "AD": "autosomal dominant"}
@@ -100,8 +102,9 @@ def _is_affected(mode, geno):
     return geno == 2 if mode == "AR" else geno >= 1
 
 
-def posterior(ped, mode):
+def posterior_bruteforce(ped, mode):
     """
+    Original brute-force engine (3^n work). Kept only to check the fast engine below against.
     Exact posterior over everyone's genotype (0, 1 or 2 disease alleles),
     given the observed affected/unaffected status of the whole family.
     Because every person is one variable, shared ancestors (consanguinity)
@@ -145,6 +148,193 @@ def posterior(ped, mode):
             for (a, b), tab in joint.items()
         },
     }
+
+
+# --------------------------------------------------------------------------
+# Exact inference by variable elimination (scales to 50+ people)
+# --------------------------------------------------------------------------
+# The brute-force engine above lists every genotype combination: 3^n work, so it
+# freezes around 22 people. This engine gives the SAME exact answers, but it
+# eliminates one person at a time (a clique tree over the pedigree), so the work
+# grows with how tangled the family is, not with how many people it has.
+class PedigreeTooComplex(ValueError):
+    """The family has too many tangled loops for the exact engine to finish quickly."""
+
+
+MAX_CLIQUE = 11  # most people one calculation step may hold at once (3^11 = 177k entries)
+
+
+def _product(scope, factors):
+    """Multiply factors (vars, table) into one table over `scope` (first variable = most significant digit)."""
+    k = len(scope)
+    pos = {v: i for i, v in enumerate(scope)}
+    maps = []
+    for fv, ft in factors:
+        st = [0] * k
+        m = len(fv)
+        for j, v in enumerate(fv):
+            st[pos[v]] = 3 ** (m - 1 - j)
+        maps.append((ft, [(i, s) for i, s in enumerate(st) if s]))
+    out = []
+    for assign in product((0, 1, 2), repeat=k):
+        w = 1.0
+        for ft, st in maps:
+            idx = 0
+            for i, s in st:
+                idx += assign[i] * s
+            w *= ft[idx]
+            if w == 0.0:
+                break
+        out.append(w)
+    return out
+
+
+def _sum_to(scope, table, keep):
+    """Add up the table over every variable not in `keep` (result ordered like `keep`)."""
+    pos = {v: i for i, v in enumerate(scope)}
+    kp = [pos[v] for v in keep]
+    out = [0.0] * (3 ** len(keep))
+    for i, assign in enumerate(product((0, 1, 2), repeat=len(scope))):
+        idx = 0
+        for p in kp:
+            idx = idx * 3 + assign[p]
+        out[idx] += table[i]
+    return out
+
+
+def _elimination_plan(n, scopes, extra_edges):
+    """Greedy min-fill elimination order. Returns (order, neighbours-at-elimination-time)."""
+    adj = [set() for _ in range(n)]
+    for sc in scopes:
+        for a in sc:
+            for b in sc:
+                if a != b:
+                    adj[a].add(b)
+    for a, b in extra_edges:
+        if a != b:
+            adj[a].add(b)
+            adj[b].add(a)
+    left = set(range(n))
+    order, nbrs = [], {}
+    while left:
+        best, best_key = None, None
+        for v in sorted(left):
+            nb = adj[v]
+            fill = sum(1 for a in nb for b in nb if a < b and b not in adj[a])
+            key = (fill, len(nb), v)
+            if best_key is None or key < best_key:
+                best, best_key = v, key
+        v = best
+        nb = set(adj[v])
+        if len(nb) + 1 > MAX_CLIQUE:
+            raise PedigreeTooComplex(
+                "This family has too many tangled loops (for example many marriages between relatives) "
+                "to calculate exactly."
+            )
+        for a in nb:
+            adj[a].discard(v)
+            for b in nb:
+                if a != b:
+                    adj[a].add(b)
+        order.append(v)
+        nbrs[v] = nb
+        left.discard(v)
+    return order, nbrs
+
+
+def posterior(ped, mode):
+    """
+    Exact posterior over everyone's genotype (0, 1 or 2 disease alleles), given the observed
+    affected/unaffected status of the whole family. Same result as posterior_bruteforce, but computed
+    by variable elimination on a clique tree, so a 50-person family takes a fraction of a second.
+    Shared ancestors (consanguinity) are handled correctly because every person is one variable.
+    """
+    cache = ped.__dict__.setdefault("_posterior_cache", {})
+    if mode in cache:
+        return cache[mode]
+    cache[mode] = res = _posterior_ve(ped, mode)
+    return res
+
+
+def _posterior_ve(ped, mode):
+    prior = _prior(ALLELE_FREQ[mode])
+    order = ped.order
+    n = len(order)
+    idx = {pid: i for i, pid in enumerate(order)}
+
+    # one factor per person: P(genotype | parents) times "matches the observed status"
+    factors = []
+    for i, pid in enumerate(order):
+        aff = bool(ped.people[pid]["affected"])
+        ps = ped.parents[pid]
+        if len(ps) == 2:
+            f, m = idx[ps[0]], idx[ps[1]]
+            t = []
+            for gc in range(3):
+                ok = 1.0 if _is_affected(mode, gc) == aff else 0.0
+                for gf in range(3):
+                    for gm in range(3):
+                        t.append(_child_dist(gf, gm)[gc] * ok)
+            factors.append(((i, f, m), t))
+        else:
+            factors.append(((i,), [prior[g] if _is_affected(mode, g) == aff else 0.0 for g in range(3)]))
+
+    pairs = []
+    for a, b in ped.partners:
+        if (idx[a], idx[b]) not in pairs:
+            pairs.append((idx[a], idx[b]))
+
+    elim, nbrs = _elimination_plan(n, [f[0] for f in factors], pairs)
+    pos = {v: k for k, v in enumerate(elim)}
+    scope = {v: tuple([v] + sorted(nbrs[v], key=pos.get)) for v in elim}  # clique of v
+    sep = {v: tuple(sorted(nbrs[v], key=pos.get)) for v in elim}          # what v hands to its parent
+    parent = {v: (min(nbrs[v], key=pos.get) if nbrs[v] else None) for v in elim}
+    kids = {v: [] for v in elim}
+    for v in elim:
+        if parent[v] is not None:
+            kids[parent[v]].append(v)
+    own = {v: [] for v in elim}
+    for fv, ft in factors:
+        own[min(fv, key=pos.get)].append((fv, ft))
+
+    # upward pass (messages are rescaled so tiny probabilities never underflow)
+    up, logz = {}, 0.0
+    for v in elim:
+        fs = own[v] + [(sep[c], up[c]) for c in kids[v]]
+        msg = _sum_to(scope[v], _product(scope[v], fs), sep[v])
+        top = max(msg)
+        if top <= 0.0:
+            return {"likelihood": 0.0, "marginals": None, "joint": None}
+        logz += math.log(top)
+        up[v] = [x / top for x in msg]
+
+    # downward pass and beliefs
+    down, belief = {}, {}
+    for v in reversed(elim):
+        fs = own[v] + [(sep[c], up[c]) for c in kids[v]]
+        if parent[v] is not None:
+            fs = fs + [(sep[v], down[v])]
+        belief[v] = _product(scope[v], fs)
+        for c in kids[v]:
+            fs_c = own[v] + [(sep[o], up[o]) for o in kids[v] if o != c]
+            if parent[v] is not None:
+                fs_c = fs_c + [(sep[v], down[v])]
+            msg = _sum_to(scope[v], _product(scope[v], fs_c), sep[c])
+            top = max(msg)
+            down[c] = [x / top for x in msg] if top > 0 else msg
+
+    marg = {}
+    for v in elim:
+        t = _sum_to(scope[v], belief[v], (v,))
+        s = sum(t)
+        marg[order[v]] = [x / s for x in t]
+    joint = {}
+    for a, b in pairs:
+        v = a if pos[a] < pos[b] else b  # the one eliminated first holds the other in its clique
+        t = _sum_to(scope[v], belief[v], (a, b))
+        s = sum(t)
+        joint[(order[a], order[b])] = [[t[3 * x + y] / s for y in range(3)] for x in range(3)]
+    return {"likelihood": math.exp(logz), "marginals": marg, "joint": joint}
 
 
 # --------------------------------------------------------------------------
