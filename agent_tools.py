@@ -17,8 +17,6 @@ CONDITION_TIPS = {
     "Beta-thalassemia": "Ask about carrier screening for beta-thalassemia (a simple blood test), especially before planning children.",
     "Sickle cell disease": "Ask about sickle cell trait (carrier) screening, a simple blood test.",
     "Familial hypercholesterolemia": "Ask about a cholesterol (lipid) test and whether earlier or more frequent screening is advisable.",
-    "Cystic fibrosis": "Ask about cystic fibrosis carrier screening, a simple blood or saliva test, especially before planning children.",
-    "Tay-Sachs disease": "Ask about Tay-Sachs carrier screening, a simple blood test, especially before planning children.",
 }
 
 _G = None
@@ -34,8 +32,8 @@ def graph():
     return _G
 
 
-def _family_of(person):
-    rows = graph().query("MATCH (p:Person {id:$id}) RETURN p.family", {"id": person}).result_set
+def _family_of(person, g=None):
+    rows = (graph() if g is None else g).query("MATCH (p:Person {id:$id}) RETURN p.family", {"id": person}).result_set
     return rows[0][0] if rows else None
 
 
@@ -108,19 +106,23 @@ def _relatives(ped, pid):
     return first, second
 
 
-def health_report(person):
-    family = _family_of(person)
+def health_report(person, g=None, ped=None):
+    """g and ped are optional: own-family mode passes a temporary graph and its pedigree."""
+    if g is None:
+        g = graph()
+    family = _family_of(person, g)
     if family is None:
         return {"error": f"Unknown person {person}"}
-    ped = _ped(family)
+    if ped is None:
+        ped = _ped(family)
     inf = pt.infer_inheritance(ped)
     mode = inf.get("mode")
     me = ped.people[person]
 
     try:  # family history and path are answered by Cypher queries inside FalkorDB
-        fh = gq.family_history(graph(), person)
+        fh = gq.family_history(g, person)
         first_aff, second_aff = fh["first_degree_affected"], fh["second_degree_affected"]
-        path = gq.path_to_nearest_affected(graph(), person, family)
+        path = gq.path_to_nearest_affected(g, person, family)
     except Exception as e:
         print(f"[warn] Cypher query failed, using Python fallback: {e}")
         first, second = _relatives(ped, person)
@@ -163,7 +165,7 @@ def health_report(person):
 
     consang = {
         frozenset((c["partner_1"], c["partner_2"])): c["common_ancestors"]
-        for c in pt.find_consanguinity(graph(), family)
+        for c in pt.find_consanguinity(g, family)
     }
     for c in pt.couple_risks(ped, mode) or []:
         if person in c["partners"]:

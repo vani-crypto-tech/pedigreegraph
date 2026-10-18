@@ -17,6 +17,7 @@ from collections import OrderedDict, defaultdict, deque
 from flask import Flask, jsonify, request
 
 import agent_tools as at
+import custom_family as cf
 
 app = Flask(__name__)
 _lock = threading.Lock()
@@ -29,6 +30,8 @@ ASK_PER_HOUR = int(os.environ.get("ASK_PER_HOUR", "1000"))
 ASK_PER_DAY = int(os.environ.get("ASK_PER_DAY", "10000"))
 _hits = defaultdict(deque)
 _day_hits = deque()
+CUSTOM_PER_HOUR = int(os.environ.get("CUSTOM_PER_HOUR", "60"))
+_custom_hits = defaultdict(deque)
 
 # record every tool call the agent makes (name, args, output)
 _orig_run_tool = at.run_tool
@@ -251,7 +254,7 @@ PAGE = """<!doctype html>
   .sugg { font-size:12px; padding:4px 8px; background:#e2e8f0; color:#0f172a; margin:2px; }
 </style></head>
 <body>
-<header><b>PedigreeGraph</b><small>family health tracker on FalkorDB - synthetic demo data, not medical advice</small></header>
+<header><b>PedigreeGraph</b><small>family health tracker on FalkorDB - synthetic demo data, not medical advice</small><a href="/custom" style="margin-left:auto;color:#7dd3fc;text-decoration:none;font-size:14px">Try your own family</a></header>
 <main>
   <section id="left">
     <div id="bar">Family: <select id="fam"></select></div>
@@ -401,6 +404,43 @@ document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'E
 loadFamilies();
 </script>
 </body></html>"""
+
+
+def custom_limited():
+    """Per-visitor hourly limit for own-family reports (each one builds a temporary graph)."""
+    now = time.time()
+    q = _custom_hits[client_ip()]
+    while q and now - q[0] > 3600:
+        q.popleft()
+    if len(q) >= CUSTOM_PER_HOUR:
+        return f"Limit reached: {CUSTOM_PER_HOUR} own-family reports per hour. The demo families have no limit."
+    q.append(now)
+    return None
+
+
+@app.get("/custom")
+def custom_page():
+    return cf.PAGE
+
+
+@app.post("/api/custom/report")
+def api_custom_report():
+    body = request.get_json(force=True, silent=True) or {}
+    person = str(body.get("person", ""))[:40]
+    limited = custom_limited()
+    if limited:
+        return jsonify({"error": limited}), 429
+    try:
+        rep = cf.analyze(body.get("family"), person)
+    except cf.InputError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:  # never echo the visitor's data back or into logs
+        app.logger.warning("custom report failed: %s", type(e).__name__)
+        return jsonify({"error": "Could not build the report right now. Please try again."}), 500
+    if "error" in rep:
+        return jsonify({"error": rep["error"]}), 404
+    call = {"tool": "health_report", "args": {"person": rep.get("person", person)}, "output": rep}
+    return jsonify({"text": format_report(rep), "highlight": collect_highlight([call])})
 
 
 @app.get("/")
