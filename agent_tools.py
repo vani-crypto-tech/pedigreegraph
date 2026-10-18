@@ -17,6 +17,8 @@ CONDITION_TIPS = {
     "Beta-thalassemia": "Ask about carrier screening for beta-thalassemia (a simple blood test), especially before planning children.",
     "Sickle cell disease": "Ask about sickle cell trait (carrier) screening, a simple blood test.",
     "Familial hypercholesterolemia": "Ask about a cholesterol (lipid) test and whether earlier or more frequent screening is advisable.",
+    "Cystic fibrosis": "Ask about cystic fibrosis carrier screening, a simple blood or saliva test, especially before planning children.",
+    "Tay-Sachs disease": "Ask about Tay-Sachs carrier screening, a simple blood test, especially before planning children.",
 }
 
 _G = None
