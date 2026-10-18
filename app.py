@@ -205,10 +205,10 @@ def api_ask():
     limited = rate_limited()
     if limited:
         return jsonify({"error": limited}), 429
-       with _lock:
+    with _lock:
         CALLS.clear()
         try:
-           resp = get_chat(cid).send_message(question)
+            resp = get_chat(cid).send_message(question)
         except Exception as e:
             msg = str(e)
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
