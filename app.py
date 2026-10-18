@@ -205,7 +205,7 @@ def api_ask():
     limited = rate_limited()
     if limited:
         return jsonify({"error": limited}), 429
-    with _lock:
+       with _lock:
         CALLS.clear()
         try:
             resp = get_chat(cid).send_message(question)
