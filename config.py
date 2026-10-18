@@ -4,6 +4,7 @@ Defaults point at the local Docker container. For FalkorDB Cloud set:
 
   FALKORDB_HOST, FALKORDB_PORT, FALKORDB_USER (default "falkordb"), FALKORDB_PASSWORD
   FALKORDB_SSL=true   (only if your instance uses TLS; the Free tier has none)
+  PEDIGREE_GRAPH      (optional) graph name to use instead of "pedigree"
 """
 import os
 
@@ -25,4 +26,5 @@ def connect_db():
 
 
 def connect(graph_name="pedigree"):
+    graph_name = os.environ.get("PEDIGREE_GRAPH", graph_name)
     return connect_db().select_graph(graph_name)

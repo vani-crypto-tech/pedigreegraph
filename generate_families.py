@@ -11,6 +11,7 @@ Synthetic pedigree generator + FalkorDB loader.
 All data is synthetic. No real people, no real genomes.
 """
 import json
+import os
 import random
 
 
@@ -84,12 +85,21 @@ def build_family(fam, mode, rng):
 
 def generate(seed=42):
     rng = random.Random(seed)
-    # real condition names, synthetic families: only the inheritance pattern is modelled
+    # the first three must stay exactly as they are (README demo questions use them)
     plan = [
         ("FAM1", "AR", "Beta-thalassemia"),
         ("FAM2", "AD", "Familial hypercholesterolemia"),
         ("FAM3", "AR", "Sickle cell disease"),
     ]
+    # extra families, appended AFTER the originals so the originals do not change
+    extra_ar = ["Cystic fibrosis", "Beta-thalassemia", "Sickle cell disease", "Tay-Sachs disease"]
+    extra_ad = ["Familial hypercholesterolemia", "Huntington's disease", "Marfan syndrome"]
+    for i in range(4, 31):  # FAM4 .. FAM30
+        if i % 3 == 0:
+            plan.append((f"FAM{i}", "AD", extra_ad[i % len(extra_ad)]))
+        else:
+            plan.append((f"FAM{i}", "AR", extra_ar[i % len(extra_ar)]))
+
     people, parent_of, partners, truth = [], [], [], {}
     for fam, mode, cond in plan:
         result = None
@@ -106,12 +116,13 @@ def generate(seed=42):
 def load(people, parent_of, partners):
     import config
 
+    graph_name = os.environ.get("PEDIGREE_GRAPH", "pedigree_big")
     db = config.connect_db()
     try:
-        db.select_graph("pedigree").delete()  # start clean
+        db.select_graph(graph_name).delete()  # start clean
     except Exception:
         pass
-    g = db.select_graph("pedigree")
+    g = db.select_graph(graph_name)
 
     g.query(
         "UNWIND $rows AS r CREATE (:Person {id: r.id, family: r.family, condition: r.condition, sex: r.sex, "
