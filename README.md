@@ -195,6 +195,15 @@ Deploying yourself: create a Render Web Service from this repo with build comman
 command `gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT`, set the environment variables above,
 and load the data once with `python generate_families.py` pointed at your FalkorDB Cloud instance.
 
+## Try your own family
+
+Open `/custom` (https://pedigreegraph.onrender.com/custom) to describe a small family: nicknames, sex, who is affected, parents and partners. Click anyone for the same report as the demo families.
+
+- For each report the app builds a temporary graph in FalkorDB with a random name, runs the same Cypher queries and exact genetics, then deletes the graph. The app does not save the family.
+- Use nicknames, not real names. The 30 demo families are synthetic. In this mode the app only processes what the visitor types. No guarantees are made about the hosting providers.
+- If nobody in the family is marked as affected, the tool shows population averages only and says so. Family history cannot find hidden carriers, so it recommends asking a doctor about carrier screening.
+- Limits: 3 to 20 people, one condition from a list, 60 reports per visitor per hour (`CUSTOM_PER_HOUR`). The AI chat covers the demo families only.
+
 ## Demo questions
 
 1. *What is the risk picture for FAM1_P14?* (recessive, cousin couple, 25% chance of an affected child)
