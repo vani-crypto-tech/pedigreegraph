@@ -207,14 +207,15 @@ def api_ask():
         return jsonify({"error": limited}), 429
     with _lock:
         CALLS.clear()
-                try:
+        try:
             resp = get_chat(cid).send_message(question)
         except Exception as e:
             msg = str(e)
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
                 return jsonify({"error": "The AI chat has reached its free daily quota for this demo. "
                                          "You can still click any person on the tree for an instant report from the graph."}), 429
-            return jsonify({"error": f"{type(e).__name__}: {e}"}), 500        calls = list(CALLS)
+            return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+        calls = list(CALLS)
     return jsonify(
         {
             "answer": resp.text or "(no text returned)",
